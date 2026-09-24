@@ -3,22 +3,19 @@ import secrets
 import string
 import subprocess
 import sys
-from datetime import datetime
-from pathlib import Path
 
 
 VERSION = "2.0"
-DEFAULT_OUTPUT_FILE = "senhas_geradas.txt"
 CONFUSING_CHARACTERS = set("O0Il")
+SYMBOLS = "!@#$%^&*()-_=+[]{};:,.<>?/"
 
 
 settings = {
-    "length": 12,
+    "length": 16,
     "include_symbols": True,
     "exclude_confusing": True,
     "quantity": 1,
     "auto_copy": False,
-    "output_file": DEFAULT_OUTPUT_FILE,
 }
 
 history = []
@@ -42,9 +39,9 @@ def show_menu():
     clear_screen()
     show_header()
     print("1 - Gerar senha")
-    print("2 - Salvar em arquivo")
-    print("3 - Ver historico")
-    print("4 - Copiar para area de transferencia")
+    print("2 - Ver historico da sessao")
+    print("3 - Copiar para area de transferencia")
+    print("4 - Limpar historico da sessao")
     print("5 - Configuracoes")
     print("0 - Sair")
 
@@ -53,7 +50,7 @@ def build_character_pool():
     characters = string.ascii_letters + string.digits
 
     if settings["include_symbols"]:
-        characters += "!@#$%^&*()-_=+[]{};:,.<>?/"
+        characters += SYMBOLS
 
     if settings["exclude_confusing"]:
         characters = "".join(
@@ -67,7 +64,7 @@ def get_required_groups():
     groups = [string.ascii_lowercase, string.ascii_uppercase, string.digits]
 
     if settings["include_symbols"]:
-        groups.append("!@#$%^&*()-_=+[]{};:,.<>?/")
+        groups.append(SYMBOLS)
 
     if settings["exclude_confusing"]:
         groups = [
@@ -78,7 +75,7 @@ def get_required_groups():
     return [group for group in groups if group]
 
 
-def generate_password():
+def generate_password() -> str:
     characters = build_character_pool()
     groups = get_required_groups()
     length = max(settings["length"], len(groups))
@@ -92,7 +89,7 @@ def generate_password():
     return "".join(password_characters)
 
 
-def calculate_strength(password):
+def calculate_strength(password: str) -> tuple[str, float]:
     pool_size = 0
 
     if any(character.islower() for character in password):
@@ -101,8 +98,8 @@ def calculate_strength(password):
         pool_size += 26
     if any(character.isdigit() for character in password):
         pool_size += 10
-    if any(character in string.punctuation for character in password):
-        pool_size += len(string.punctuation)
+    if any(character in SYMBOLS for character in password):
+        pool_size += len(SYMBOLS)
 
     entropy = len(password) * math.log2(pool_size) if pool_size else 0
 
@@ -126,7 +123,6 @@ def generate_passwords():
                 "password": password,
                 "strength": strength,
                 "entropy": entropy,
-                "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             }
         )
 
@@ -158,38 +154,6 @@ def option_generate_passwords():
     pause()
 
 
-def save_passwords_to_file(passwords):
-    if not passwords:
-        return False
-
-    output_path = Path(settings["output_file"])
-
-    with output_path.open("a", encoding="utf-8") as file:
-        file.write(f"\n--- Senhas geradas em {datetime.now():%Y-%m-%d %H:%M:%S} ---\n")
-
-        for item in passwords:
-            file.write(
-                f"{item['password']} | Forca: {item['strength']} "
-                f"| Entropia: {item['entropy']:.1f} bits\n"
-            )
-
-    return True
-
-
-def option_save_to_file():
-    if not history:
-        print("\nNenhuma senha foi gerada ainda.")
-        pause()
-        return
-
-    if save_passwords_to_file(history):
-        print(f"\nHistorico salvo em: {Path(settings['output_file']).resolve()}")
-    else:
-        print("\nNao ha senhas para salvar.")
-
-    pause()
-
-
 def option_show_history():
     if not history:
         print("\nHistorico vazio.")
@@ -201,7 +165,7 @@ def option_show_history():
     for index, item in enumerate(history, start=1):
         print(
             f"{index}. {item['password']} | {item['strength']} "
-            f"| {item['entropy']:.1f} bits | {item['created_at']}"
+            f"| {item['entropy']:.1f} bits"
         )
 
     pause()
@@ -246,6 +210,21 @@ def option_copy_to_clipboard():
         print("\nUltima senha copiada para a area de transferencia.")
     else:
         print("\nNao foi possivel copiar neste sistema.")
+
+    pause()
+
+
+def option_clear_history():
+    if not history:
+        print("\nHistorico da sessao ja esta vazio.")
+        pause()
+        return
+
+    if ask_yes_or_no("Limpar todas as senhas desta sessao"):
+        history.clear()
+        print("\nHistorico da sessao limpo.")
+    else:
+        print("\nOperacao cancelada.")
 
     pause()
 
@@ -295,21 +274,13 @@ def option_settings():
         f"{'sim' if settings['exclude_confusing'] else 'nao'}"
     )
     print(f"Copiar automaticamente: {'sim' if settings['auto_copy'] else 'nao'}")
-    print(f"Arquivo de saida: {settings['output_file']}")
     print()
 
-    settings["length"] = ask_integer("Novo tamanho da senha (minimo 4): ", 4, 128)
+    settings["length"] = ask_integer("Novo tamanho da senha (minimo 12): ", 12, 128)
     settings["quantity"] = ask_integer("Quantas senhas gerar por vez (1 a 100): ", 1, 100)
     settings["include_symbols"] = ask_yes_or_no("Incluir simbolos")
     settings["exclude_confusing"] = ask_yes_or_no("Excluir O, 0, I, l")
     settings["auto_copy"] = ask_yes_or_no("Copiar automaticamente a ultima senha")
-
-    output_file = input(
-        f"Arquivo para salvar senhas [{settings['output_file']}]: "
-    ).strip()
-
-    if output_file:
-        settings["output_file"] = output_file
 
     print("\nConfiguracoes atualizadas.")
     pause()
@@ -323,11 +294,11 @@ def main():
         if option == "1":
             option_generate_passwords()
         elif option == "2":
-            option_save_to_file()
-        elif option == "3":
             option_show_history()
-        elif option == "4":
+        elif option == "3":
             option_copy_to_clipboard()
+        elif option == "4":
+            option_clear_history()
         elif option == "5":
             option_settings()
         elif option == "0":
